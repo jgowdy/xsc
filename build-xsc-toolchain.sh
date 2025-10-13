@@ -10,22 +10,28 @@ echo "Variant: $XSC_VARIANT_NAME"
 echo ''
 
 # Build on bx.ee with all cores
-ssh bx.ee "bash -s" << EOF
+# Use sed to substitute variables into the heredoc
+sed -e "s|TARGET_PLACEHOLDER|$XSC_TRIPLET|g" \
+    -e "s|PREFIX_PLACEHOLDER|/storage/icloud-backup/build/xsc-toolchain-${XSC_ARCH}-${XSC_VARIANT_NAME}|g" \
+    -e "s|MAKEFLAGS_PLACEHOLDER|${MAKEFLAGS:--j80}|g" \
+    -e "s|ARCH_PLACEHOLDER|${XSC_ARCH}|g" \
+    -e "s|VARIANT_PLACEHOLDER|${XSC_VARIANT_NAME}|g" \
+    << 'EOF' | ssh bx.ee "bash -s"
 set -e
 export TMPDIR=/storage/icloud-backup/build/tmp
 cd /storage/icloud-backup/build
 
 # Setup
-export TARGET=$XSC_TRIPLET
-export PREFIX=/storage/icloud-backup/build/xsc-toolchain-${XSC_ARCH}-${XSC_VARIANT_NAME}
-export PATH=\$PREFIX/bin:\$PATH
-export MAKEFLAGS="${MAKEFLAGS:--j80}"
+export TARGET=TARGET_PLACEHOLDER
+export PREFIX=PREFIX_PLACEHOLDER
+export PATH=$PREFIX/bin:$PATH
+export MAKEFLAGS="MAKEFLAGS_PLACEHOLDER"
 
 # Determine Linux ARCH for headers
-case "$XSC_ARCH" in
+case "ARCH_PLACEHOLDER" in
     x86_64) LINUX_ARCH=x86_64 ;;
     aarch64) LINUX_ARCH=arm64 ;;
-    *) echo "Unsupported arch: $XSC_ARCH"; exit 1 ;;
+    *) echo "Unsupported arch: ARCH_PLACEHOLDER"; exit 1 ;;
 esac
 
 mkdir -p src xsc-toolchain
@@ -57,9 +63,9 @@ fi
 echo ""
 echo "=== Stage 1: Building Binutils ==="
 cd /storage/icloud-backup/build
-rm -rf build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
-mkdir build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
-cd build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
+rm -rf build-binutils-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+mkdir build-binutils-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+cd build-binutils-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
 ../src/binutils-2.41/configure \
     --prefix=$PREFIX \
@@ -81,9 +87,9 @@ make ARCH=\$LINUX_ARCH INSTALL_HDR_PATH=\$PREFIX/\$TARGET/usr headers_install
 echo ""
 echo "=== Stage 3: Building GCC (bootstrap) ==="
 cd /storage/icloud-backup/build
-rm -rf build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
-mkdir build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
-cd build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
+rm -rf build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+mkdir build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+cd build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
 ../src/gcc-13.2.0/configure \
     --prefix=$PREFIX \
@@ -136,9 +142,9 @@ GLIBC_EOF
 esac
 
 cd /storage/icloud-backup/build
-rm -rf build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
-mkdir build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
-cd build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+rm -rf build-glibc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+mkdir build-glibc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+cd build-glibc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
 ../src/glibc-2.38/configure \
     --prefix=/usr \
@@ -155,9 +161,9 @@ make install DESTDIR=$PREFIX/$TARGET
 echo ""
 echo "=== Stage 5: Building GCC (full) ==="
 cd /storage/icloud-backup/build
-rm -rf build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
-mkdir build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
-cd build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+rm -rf build-gcc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+mkdir build-gcc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
+cd build-gcc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
 ../src/gcc-13.2.0/configure \
     --prefix=$PREFIX \
