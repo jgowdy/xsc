@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config XSC
+	tristate "eXtended Syscall (XSC) support"
+	depends on X86_64 || ARM64
+	select TRACING
+	help
+	  This option enables support for the eXtended Syscall (XSC) interface,
+	  which provides a ring-based syscall mechanism for improved performance.
+
+	  The XSC interface allows userspace applications to submit system call
+	  requests through submission/completion rings instead of traditional
+	  syscall instructions, reducing context switching overhead.
+
+	  If you plan to run XSC-enabled applications, say Y or M here.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called xsc_core.
+
+	  If unsure, say N.

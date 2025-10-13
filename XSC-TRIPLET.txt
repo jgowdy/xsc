@@ -1,0 +1,38 @@
+# XSC Architecture Triplet Definition
+# ===================================
+
+## Triplet: x86_64-xsc-linux-gnu
+
+Architecture: x86_64
+Vendor:       xsc (eXtended SysCall)
+Kernel:       linux
+Userland:     gnu
+
+## Usage
+
+### GCC/Binutils Configuration
+./configure --target=x86_64-xsc-linux-gnu --prefix=/opt/xsc
+
+### Glibc Configuration
+./configure --host=x86_64-xsc-linux-gnu --prefix=/usr
+
+### Package Building
+- RPM: %_arch x86_64-xsc
+- DEB: Architecture: xsc-amd64
+
+## Rationale
+
+XSC uses a fundamentally different syscall ABI:
+- No syscall/sysenter/int 0x80 instructions
+- Ring-based asynchronous interface
+- PT_NOTE XSC_ABI marker required in ELF binaries
+- SIGSYS on syscall instruction attempts
+
+Standard x86_64-linux-gnu binaries are INCOMPATIBLE with XSC.
+All packages must be rebuilt with XSC-aware toolchain.
+
+## Build System Configuration
+
+export XSC_TRIPLET=x86_64-xsc-linux-gnu
+export ARCH=x86_64
+export CROSS_COMPILE=x86_64-xsc-linux-gnu-
