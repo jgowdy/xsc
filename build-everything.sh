@@ -31,18 +31,18 @@ export MAKEFLAGS="-j20"  # 20 cores each = 80 total
 build_toolchain() {
     ARCH=$1
     VARIANT=$2
-    
+
     echo ""
     echo "=== Starting $ARCH $VARIANT toolchain ==="
-    
+
     # Source the build configuration
     export XSC_ARCH=$ARCH
     export XSC_VARIANT=$VARIANT
-    source /Users/jgowdy/flexsc/xsc-build-config.sh
-    
+    source /storage/icloud-backup/build/xsc-build-config.sh
+
     # Run toolchain build
-    bash /Users/jgowdy/flexsc/build-xsc-toolchain.sh > /tmp/toolchain-$ARCH-$VARIANT.log 2>&1
-    
+    bash /storage/icloud-backup/build/build-xsc-toolchain.sh > /tmp/toolchain-$ARCH-$VARIANT.log 2>&1
+
     echo "=== Finished $ARCH $VARIANT toolchain ==="
 }
 
