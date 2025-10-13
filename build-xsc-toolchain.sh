@@ -104,7 +104,8 @@ cd build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
     --disable-threads \
     --disable-libssp \
     --disable-libgomp \
-    --disable-libquadmath
+    --disable-libquadmath \
+    --disable-libgcov
 
 make $MAKEFLAGS all-gcc
 make $MAKEFLAGS all-target-libgcc
