@@ -147,6 +147,7 @@ cd build-glibc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
 ../src/glibc-2.38/configure \
     --prefix=/usr \
+    --libdir=/usr/lib \
     --host=$TARGET \
     --with-headers=$PREFIX/$TARGET/usr/include \
     --disable-werror \
