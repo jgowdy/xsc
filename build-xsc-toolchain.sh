@@ -108,9 +108,7 @@ cd build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
     --disable-libgcov
 
 make $MAKEFLAGS all-gcc
-make $MAKEFLAGS all-target-libgcc
 make install-gcc
-make install-target-libgcc
 
 # Stage 4: Glibc (with XSC sysdeps - minimal for now)
 echo ""
