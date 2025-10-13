@@ -57,9 +57,9 @@ fi
 echo ""
 echo "=== Stage 1: Building Binutils ==="
 cd /storage/icloud-backup/build
-rm -rf build-binutils
-mkdir build-binutils
-cd build-binutils
+rm -rf build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
+mkdir build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
+cd build-binutils-${XSC_ARCH}-${XSC_VARIANT_NAME}
 
 ../src/binutils-2.41/configure \
     --prefix=$PREFIX \
@@ -81,9 +81,9 @@ make ARCH=\$LINUX_ARCH INSTALL_HDR_PATH=\$PREFIX/\$TARGET/usr headers_install
 echo ""
 echo "=== Stage 3: Building GCC (bootstrap) ==="
 cd /storage/icloud-backup/build
-rm -rf build-gcc-bootstrap
-mkdir build-gcc-bootstrap
-cd build-gcc-bootstrap
+rm -rf build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
+mkdir build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
+cd build-gcc-bootstrap-${XSC_ARCH}-${XSC_VARIANT_NAME}
 
 ../src/gcc-13.2.0/configure \
     --prefix=$PREFIX \
@@ -136,9 +136,9 @@ GLIBC_EOF
 esac
 
 cd /storage/icloud-backup/build
-rm -rf build-glibc
-mkdir build-glibc
-cd build-glibc
+rm -rf build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+mkdir build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+cd build-glibc-${XSC_ARCH}-${XSC_VARIANT_NAME}
 
 ../src/glibc-2.38/configure \
     --prefix=/usr \
@@ -155,9 +155,9 @@ make install DESTDIR=$PREFIX/$TARGET
 echo ""
 echo "=== Stage 5: Building GCC (full) ==="
 cd /storage/icloud-backup/build
-rm -rf build-gcc
-mkdir build-gcc
-cd build-gcc
+rm -rf build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+mkdir build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
+cd build-gcc-${XSC_ARCH}-${XSC_VARIANT_NAME}
 
 ../src/gcc-13.2.0/configure \
     --prefix=$PREFIX \
