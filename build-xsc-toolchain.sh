@@ -81,7 +81,7 @@ make install
 echo ""
 echo "=== Stage 2: Installing Linux Headers ==="
 cd /storage/icloud-backup/build/linux-6.1
-make ARCH=\$LINUX_ARCH INSTALL_HDR_PATH=\$PREFIX/\$TARGET/usr headers_install
+make ARCH=$LINUX_ARCH INSTALL_HDR_PATH=$PREFIX/$TARGET/usr headers_install
 
 # Stage 3: GCC (bootstrap)
 echo ""
@@ -116,25 +116,25 @@ echo ""
 echo "=== Stage 4: Building Glibc ==="
 
 # Create XSC sysdeps directory structure for the appropriate architecture
-mkdir -p /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/\${TARGET}
+mkdir -p /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/${TARGET}
 
 # For now, use standard syscalls - we'll implement XSC rings later
 # Create a minimal configure fragment
-cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/\${TARGET}/configure << 'GLIBC_EOF'
+cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/${TARGET}/configure << 'GLIBC_EOF'
 # XSC-specific configuration
 # For now, inherits from parent architecture
 GLIBC_EOF
 
 # Set Implies based on architecture
-case "\$TARGET" in
+case "$TARGET" in
     x86_64-xsc-linux-gnu)
-        cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/\${TARGET}/Implies << 'GLIBC_EOF'
+        cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/${TARGET}/Implies << 'GLIBC_EOF'
 unix/sysv/linux/x86_64
 x86_64
 GLIBC_EOF
         ;;
     aarch64-xsc-linux-gnu)
-        cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/\${TARGET}/Implies << 'GLIBC_EOF'
+        cat > /storage/icloud-backup/build/src/glibc-2.38/sysdeps/unix/sysv/linux/${TARGET}/Implies << 'GLIBC_EOF'
 unix/sysv/linux/aarch64
 aarch64
 GLIBC_EOF
