@@ -171,6 +171,7 @@ cd build-gcc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
     --enable-languages=c,c++ \
     --disable-multilib \
     --disable-nls \
+    --disable-libsanitizer \
     --with-sysroot=$PREFIX/$TARGET \
     --with-build-sysroot=$PREFIX/$TARGET \
     --with-native-system-header-dir=/usr/include
