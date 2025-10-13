@@ -172,6 +172,7 @@ cd build-gcc-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
     --disable-multilib \
     --disable-nls \
     --with-sysroot=$PREFIX/$TARGET \
+    --with-build-sysroot=$PREFIX/$TARGET \
     --with-native-system-header-dir=/usr/include
 
 make $MAKEFLAGS
