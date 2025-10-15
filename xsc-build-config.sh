@@ -1,8 +1,8 @@
 #!/bin/bash
 # XSC Build Configuration
-# Source this file to set build flags for base or hardened variants
+# Source this file to set build flags for base or cfi-compat variants
 
-# Build variant: "base" or "hardened"
+# Build variant: "base" or "cfi-compat"
 XSC_VARIANT="${XSC_VARIANT:-base}"
 
 # Target architecture
@@ -15,10 +15,10 @@ XSC_BASE_LDFLAGS="-Wl,-z,relro,-z,now"
 # Architecture-specific hardening
 case "$XSC_ARCH" in
     x86_64)
-        if [ "$XSC_VARIANT" = "hardened" ]; then
+        if [ "$XSC_VARIANT" = "cfi-compat" ]; then
             XSC_HARDENING_CFLAGS="-fcf-protection=full"
-            XSC_VARIANT_NAME="hardened"
-            echo "XSC Build: x86-64 Hardened (CET enabled)"
+            XSC_VARIANT_NAME="cfi-compat"
+            echo "XSC Build: x86-64 CFI-Compat (CET enabled, CFI with JIT allowlist support)"
         else
             XSC_HARDENING_CFLAGS=""
             XSC_VARIANT_NAME="base"
@@ -30,10 +30,10 @@ case "$XSC_ARCH" in
         ;;
 
     aarch64)
-        if [ "$XSC_VARIANT" = "hardened" ]; then
+        if [ "$XSC_VARIANT" = "cfi-compat" ]; then
             XSC_HARDENING_CFLAGS="-mbranch-protection=pac-ret"
-            XSC_VARIANT_NAME="hardened"
-            echo "XSC Build: ARM64 Hardened (PAC enabled)"
+            XSC_VARIANT_NAME="cfi-compat"
+            echo "XSC Build: ARM64 CFI-Compat (PAC enabled, CFI with JIT allowlist support)"
         else
             XSC_HARDENING_CFLAGS=""
             XSC_VARIANT_NAME="base"

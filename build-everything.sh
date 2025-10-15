@@ -7,7 +7,7 @@ echo "XSC COMPLETE OS BUILD"
 echo "========================================"
 echo ""
 echo "This builds the complete XSC operating system:"
-echo "  - 4 toolchain variants (x86_64 + aarch64, base + hardened)"
+echo "  - 4 toolchain variants (x86_64 + aarch64, base + cfi-compat)"
 echo "  - ~500 packages per variant"
 echo "  - Debian and AlmaLinux repositories"
 echo "  - All installation ISOs"
@@ -50,21 +50,21 @@ build_toolchain() {
 build_toolchain x86_64 base &
 PID_X64_BASE=$!
 
-build_toolchain x86_64 hardened &
-PID_X64_HARD=$!
+build_toolchain x86_64 cfi-compat &
+PID_X64_CFI=$!
 
 build_toolchain aarch64 base &
 PID_ARM_BASE=$!
 
-build_toolchain aarch64 hardened &
-PID_ARM_HARD=$!
+build_toolchain aarch64 cfi-compat &
+PID_ARM_CFI=$!
 
 # Wait for all toolchains
 echo "Waiting for all toolchains to complete..."
 wait $PID_X64_BASE && echo "✓ x86_64 base complete" || echo "✗ x86_64 base FAILED"
-wait $PID_X64_HARD && echo "✓ x86_64 hardened complete" || echo "✗ x86_64 hardened FAILED"
+wait $PID_X64_CFI && echo "✓ x86_64 cfi-compat complete" || echo "✗ x86_64 cfi-compat FAILED"
 wait $PID_ARM_BASE && echo "✓ aarch64 base complete" || echo "✗ aarch64 base FAILED"
-wait $PID_ARM_HARD && echo "✓ aarch64 hardened complete" || echo "✗ aarch64 hardened FAILED"
+wait $PID_ARM_CFI && echo "✓ aarch64 cfi-compat complete" || echo "✗ aarch64 cfi-compat FAILED"
 
 echo ""
 echo "All toolchains complete!"
@@ -106,10 +106,10 @@ echo "BUILD COMPLETE"
 echo "========================================"
 echo ""
 echo "Toolchains:"
-echo "  /storage/icloud-backup/build/xsc-toolchain-x86_64/"
-echo "  /storage/icloud-backup/build/xsc-toolchain-x86_64-hardened/"
-echo "  /storage/icloud-backup/build/xsc-toolchain-aarch64/"
-echo "  /storage/icloud-backup/build/xsc-toolchain-aarch64-hardened/"
+echo "  /storage/icloud-backup/build/xsc-toolchain-x86_64-base/"
+echo "  /storage/icloud-backup/build/xsc-toolchain-x86_64-cfi-compat/"
+echo "  /storage/icloud-backup/build/xsc-toolchain-aarch64-base/"
+echo "  /storage/icloud-backup/build/xsc-toolchain-aarch64-cfi-compat/"
 echo ""
 echo "Repositories:"
 echo "  http://bx.ee/repos/xsc/"

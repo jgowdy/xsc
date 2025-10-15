@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build both base and hardened XSC variants
+# Build both base and cfi-compat XSC variants
 set -e
 
 cd /Users/jgowdy/flexsc
@@ -16,12 +16,12 @@ export XSC_ARCH="$ARCH"
 ./build-xsc-toolchain.sh
 
 echo ""
-echo "2/2 Building Hardened Variant..."
-export XSC_VARIANT=hardened
+echo "2/2 Building CFI-Compat Variant..."
+export XSC_VARIANT=cfi-compat
 export XSC_ARCH="$ARCH"
 ./build-xsc-toolchain.sh
 
 echo ""
 echo "=== Both Variants Built ==="
 echo "Base: /storage/icloud-backup/build/xsc-toolchain-$ARCH-base/"
-echo "Hardened: /storage/icloud-backup/build/xsc-toolchain-$ARCH-hardened/"
+echo "CFI-Compat: /storage/icloud-backup/build/xsc-toolchain-$ARCH-cfi-compat/"
