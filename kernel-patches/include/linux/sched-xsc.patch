@@ -1,0 +1,38 @@
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 1234567..89abcdef 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -73,6 +73,7 @@ struct task_struct {
+ #include <linux/kcsan.h>
+ #include <linux/rv.h>
+ #include <asm/kmap_size.h>
++#include <../../drivers/xsc/include/xsc_mode.h>
+
+ /* Task command name length: */
+ #define TASK_COMM_LEN			16
+@@ -1500,6 +1501,18 @@ struct task_struct {
+ 	struct user_event_mm		*user_event_mm;
+ #endif
+
++#ifdef CONFIG_XSC
++#ifdef CONFIG_XSC_LEGACY_ALLOWLIST
++	/*
++	 * XSC syscall mode - IMMUTABLE after exec
++	 *
++	 * XSC_MODE_XSC (0): must use XSC (default, secure)
++	 * XSC_MODE_LEGACY (1): allowlisted JIT, direct syscalls allowed
++	 *
++	 * Determined ONCE at exec based on binary allowlist.
++	 * NEVER changes during normal process execution.
++	 * Subsequent execs re-evaluate new binary and set new mode.
++	 *
++	 * Security: XSC_MODE_XSC is 0 so zeroing the flag keeps you secure.
++	 */
++	enum xsc_syscall_mode		xsc_syscall_mode;
++#endif
++	struct xsc_ctx			*xsc_ctx;
++#endif
++
+ 	/*
+ 	 * New fields for task_struct should be added above here, so that
+ 	 * they are included in the randomized portion of task_struct.

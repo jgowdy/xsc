@@ -1,0 +1,42 @@
+diff --git a/drivers/xsc/Kconfig b/drivers/xsc/Kconfig
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/drivers/xsc/Kconfig
+@@ -0,0 +1,35 @@
++config XSC
++	bool "XSC (eXtended Syscall) support"
++	depends on X86_64 || ARM64
++	default y
++	help
++	  XSC is a ring-based asynchronous syscall architecture that provides
++	  improved performance and security for system calls.
++
++	  XSC is the primary syscall interface. All processes must use XSC
++	  unless explicitly allowlisted (see XSC_LEGACY_ALLOWLIST).
++
++	  If unsure, say Y.
++
++config XSC_LEGACY_ALLOWLIST
++	bool "Allow legacy syscall interface for JIT engines"
++	depends on XSC
++	default n
++	help
++	  Enable support for allowlisting JIT engines (Java, Node.js, LuaJIT)
++	  that cannot be easily recompiled to use XSC.
++
++	  When enabled:
++	    - Binaries on the allowlist can use direct syscalls
++	    - Mode is checked at exec time and on every syscall entry (~5 cycles)
++	    - Allowlist is in drivers/xsc/xsc_mode.c
++
++	  When disabled:
++	    - NO exceptions - all processes MUST use XSC
++	    - Legacy syscall interface is HARD LOCKED OUT
++	    - Zero overhead - no mode checks needed
++	    - Maximum security
++
++	  System components (init, systemd, bash, etc.) always use XSC
++	  regardless of this option.
++
++	  If unsure, say N for maximum security.

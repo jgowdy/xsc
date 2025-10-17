@@ -1,0 +1,33 @@
+From: XSC Project <xsc@example.com>
+Subject: [PATCH] Export epoll internal functions for XSC
+
+Export do_epoll_wait for use by XSC ring-based syscall module.
+
+Signed-off-by: XSC Project <xsc@example.com>
+---
+ fs/eventpoll.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/fs/eventpoll.c b/fs/eventpoll.c
+index f53ca4f7..e8c9f3a2 100644
+--- a/fs/eventpoll.c
++++ b/fs/eventpoll.c
+@@ -2237,7 +2237,7 @@ SYSCALL_DEFINE1(epoll_create, int, size)
+  * the eventpoll file that will be signaled with EPOLLIN, should you decide to
+  * use it.
+  */
+-static int do_epoll_wait(int epfd, struct epoll_event __user *events,
++int do_epoll_wait(int epfd, struct epoll_event __user *events,
+ 			 int maxevents, struct timespec64 *to)
+ {
+ 	int error;
+@@ -2287,6 +2287,7 @@ static int do_epoll_wait(int epfd, struct epoll_event __user *events,
+
+ 	return error;
+ }
++EXPORT_SYMBOL(do_epoll_wait);
+
+ SYSCALL_DEFINE4(epoll_wait, int, epfd, struct epoll_event __user *, events,
+ 		int, maxevents, int, timeout)
+--
+2.34.1

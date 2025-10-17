@@ -1,0 +1,45 @@
+# XSC CFI JIT Package Database
+#
+# This file maps Debian package names to their JIT binaries that need CFI exemption.
+# Format: package_name:binary_path:reason
+#
+# Lines starting with # are comments
+# Empty lines are ignored
+
+# Java JIT Engines
+openjdk-17-jre-headless:/usr/lib/jvm/java-17-openjdk-amd64/bin/java:HotSpot JIT generates code without ENDBR64
+openjdk-17-jdk:/usr/lib/jvm/java-17-openjdk-amd64/bin/java:HotSpot JIT generates code without ENDBR64
+openjdk-11-jre-headless:/usr/lib/jvm/java-11-openjdk-amd64/bin/java:HotSpot JIT generates code without ENDBR64
+openjdk-11-jdk:/usr/lib/jvm/java-11-openjdk-amd64/bin/java:HotSpot JIT generates code without ENDBR64
+default-jre:/usr/bin/java:Points to default Java (usually OpenJDK with JIT)
+default-jdk:/usr/bin/java:Points to default Java (usually OpenJDK with JIT)
+
+# JavaScript JIT Engines
+nodejs:/usr/bin/node:V8 JIT incompatible with IBT
+node:/usr/bin/node:V8 JIT incompatible with IBT
+
+# Lua JIT
+luajit:/usr/bin/luajit:LuaJIT generates runtime code without CFI support
+
+# PyPy (Python JIT)
+pypy3:/usr/bin/pypy3:PyPy JIT may not support CET (test first)
+pypy:/usr/bin/pypy:PyPy JIT may not support CET (test first)
+
+# WebAssembly (test before adding - some support CFI)
+#wasmtime:/usr/bin/wasmtime:May need testing
+#wasmer:/usr/bin/wasmer:May need testing
+
+# .NET (test before adding - newer versions support CET)
+#dotnet-runtime:/usr/bin/dotnet:CoreCLR JIT (test if CFI supported)
+
+# Ruby YJIT (only if YJIT enabled)
+#ruby-yjit:/usr/bin/ruby:Only if built with --enable-yjit
+
+# V8 standalone
+#libv8-dev:/usr/bin/d8:V8 debug shell
+
+# MongoDB (has JIT for queries)
+#mongodb-server:/usr/bin/mongod:Query JIT may need exemption
+
+# PostgreSQL JIT (LLVM-based)
+#postgresql-14:/usr/lib/postgresql/14/bin/postgres:LLVM JIT for queries (test first)

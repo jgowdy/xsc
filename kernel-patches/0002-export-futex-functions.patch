@@ -1,0 +1,48 @@
+From: XSC Project <xsc@example.com>
+Subject: [PATCH] Export futex internal functions for XSC
+
+Export futex_wait and futex_wake for use by XSC ring-based
+syscall module.
+
+Signed-off-by: XSC Project <xsc@example.com>
+---
+ kernel/futex/futex.h    | 2 ++
+ kernel/futex/waitwake.c | 2 ++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/kernel/futex/futex.h b/kernel/futex/futex.h
+index 8b195d4..e9f5e8d 100644
+--- a/kernel/futex/futex.h
++++ b/kernel/futex/futex.h
+@@ -285,7 +285,9 @@ extern int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags, u32
+ 				  u32 __user *uaddr2, struct hrtimer_sleeper *to,
+ 				  u32 *cmpxchg);
+
++/* Exported for XSC module */
+ extern int futex_wait(u32 __user *uaddr, unsigned int flags, u32 val,
+ 		      ktime_t *abs_time, u32 bitset);
++extern int futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset);
+
+ #endif /* _FUTEX_H */
+diff --git a/kernel/futex/waitwake.c b/kernel/futex/waitwake.c
+index 61b112897..f8c9a3b1e 100644
+--- a/kernel/futex/waitwake.c
++++ b/kernel/futex/waitwake.c
+@@ -213,6 +213,7 @@ int futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset)
+
+ 	return ret;
+ }
++EXPORT_SYMBOL(futex_wake);
+
+ static int futex_atomic_op_inuser(unsigned int encoded_op, u32 __user *uaddr)
+ {
+@@ -654,6 +655,7 @@ int futex_wait(u32 __user *uaddr, unsigned int flags, u32 val,
+
+ 	return ret;
+ }
++EXPORT_SYMBOL(futex_wait);
+
+ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
+ 		const struct __kernel_timespec __user *, utime,
+--
+2.34.1

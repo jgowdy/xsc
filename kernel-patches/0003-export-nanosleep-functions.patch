@@ -1,0 +1,39 @@
+From: XSC Project <xsc@example.com>
+Subject: [PATCH] Export hrtimer_nanosleep for XSC
+
+Export hrtimer_nanosleep for use by XSC ring-based syscall module.
+
+Signed-off-by: XSC Project <xsc@example.com>
+---
+ include/linux/hrtimer.h | 3 +++
+ kernel/time/hrtimer.c   | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/include/linux/hrtimer.h b/include/linux/hrtimer.h
+index 0ee140176..f8a9c3e3a 100644
+--- a/include/linux/hrtimer.h
++++ b/include/linux/hrtimer.h
+@@ -508,6 +508,9 @@ extern int schedule_hrtimeout_range(ktime_t *expires, u64 delta,
+ extern int schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
+ 					   const enum hrtimer_mode mode,
+ 					   clockid_t clock_id);
++
++/* Exported for XSC module */
++extern long hrtimer_nanosleep(ktime_t rqtp, const enum hrtimer_mode mode, const clockid_t clockid);
+ extern int schedule_hrtimeout(ktime_t *expires, const enum hrtimer_mode mode);
+
+ /* Soft interrupt function to run the hrtimer queues: */
+diff --git a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
+index f5641bbb8..e9f3b8c9a 100644
+--- a/kernel/time/hrtimer.c
++++ b/kernel/time/hrtimer.c
+@@ -2061,6 +2061,7 @@ long hrtimer_nanosleep(ktime_t rqtp, const enum hrtimer_mode mode,
+
+ 	return ret;
+ }
++EXPORT_SYMBOL(hrtimer_nanosleep);
+
+ SYSCALL_DEFINE2(nanosleep, struct __kernel_timespec __user *, rqtp,
+ 		struct __kernel_timespec __user *, rmtp)
+--
+2.34.1

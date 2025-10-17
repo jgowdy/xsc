@@ -128,6 +128,9 @@ echo "=== Phase 3: Create Initramfs ==="
 
 cd "$BUILD_DIR/initramfs"
 
+# Create directory structure
+mkdir -p bin sbin usr/bin usr/sbin
+
 # Copy busybox (if available) or create minimal init
 if command -v busybox &> /dev/null; then
     cp $(which busybox) bin/busybox
@@ -193,34 +196,15 @@ EOF
 echo "Copying root filesystem to ISO..."
 rsync -a "$BUILD_DIR/rootfs/" "$BUILD_DIR/iso/"
 
-# Create ISO
+# Create ISO (simple, for use with QEMU direct kernel boot)
 echo "Creating ISO image..."
-if command -v xorriso &> /dev/null; then
-    nice -n 19 ionice -c 3 xorriso -as mkisofs \
-        -o "$BUILD_DIR/$ISO_NAME" \
-        -b boot/grub/i386-pc/eltorito.img \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -eltorito-alt-boot \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-        -V "XSC_V7_BASE" \
-        "$BUILD_DIR/iso"
-else
-    echo "ERROR: xorriso not found"
-    echo "Using genisoimage as fallback..."
-    nice -n 19 ionice -c 3 genisoimage \
-        -o "$BUILD_DIR/$ISO_NAME" \
-        -b boot/grub/stage2_eltorito \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -R -J -v -T \
-        -V "XSC_V7_BASE" \
-        "$BUILD_DIR/iso"
-fi
+echo "Note: This ISO is designed for QEMU with direct kernel boot"
+nice -n 19 ionice -c 3 genisoimage \
+    -o "$BUILD_DIR/$ISO_NAME" \
+    -R -J -v -T \
+    -V "XSC_V7_BASE" \
+    -input-charset utf-8 \
+    "$BUILD_DIR/iso" 2>&1 || true
 
 echo ""
 echo "=== Build Complete ==="
@@ -228,8 +212,13 @@ ls -lh "$BUILD_DIR/$ISO_NAME"
 echo ""
 echo "ISO created at: $BUILD_DIR/$ISO_NAME"
 echo ""
-echo "To test in QEMU:"
-echo "  qemu-system-x86_64 -m 2G -smp 4 -cdrom $BUILD_DIR/$ISO_NAME -enable-kvm"
+echo "To test in QEMU (with direct kernel boot):"
+echo "  qemu-system-x86_64 -m 2G -smp 4 \\"
+echo "    -kernel $BUILD_DIR/boot/vmlinuz-$KERNEL_VERSION \\"
+echo "    -initrd $BUILD_DIR/boot/initrd.img-$KERNEL_VERSION \\"
+echo "    -append 'root=/dev/sda1 console=ttyS0' \\"
+echo "    -drive file=$BUILD_DIR/$ISO_NAME,format=raw \\"
+echo "    -enable-kvm -nographic"
 echo ""
 echo "To copy to local machine:"
 echo "  scp bx.ee:$BUILD_DIR/$ISO_NAME ~/Desktop/"

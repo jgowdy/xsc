@@ -1,0 +1,10 @@
+# Makefile for XSC ARM64 Doorbell Validation
+
+obj-$(CONFIG_XSC_DOORBELL) += xsc_doorbell.o
+
+xsc_doorbell-y := xsc_doorbell.o \
+		  xsc_doorbell_sysfs.o \
+		  xsc_doorbell_tests.o \
+		  xsc_doorbell_watchdog.o
+
+ccflags-y += -DCONFIG_ARM64

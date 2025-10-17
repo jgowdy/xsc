@@ -1,0 +1,96 @@
+diff --git a/arch/x86/entry/entry_64.S b/arch/x86/entry/entry_64.S
+index 1234567..89abcdef 100644
+--- a/arch/x86/entry/entry_64.S
++++ b/arch/x86/entry/entry_64.S
+@@ -89,6 +89,34 @@ SYM_CODE_START(entry_SYSCALL_64)
+ 	PUSH_REGS
+ 	CLEAR_REGS_NOSPEC
+
++#ifdef CONFIG_XSC
++	/*
++	 * XSC Syscall Mode Enforcement
++	 *
++	 * XSC is MANDATORY for all processes.
++	 */
++#ifdef CONFIG_XSC_LEGACY_ALLOWLIST
++	/*
++	 * Legacy allowlist enabled: check global flag first (defense-in-depth)
++	 *
++	 * Two-level check:
++	 * 1. Global xsc_allowlist_active flag (set at boot if allowlist non-empty)
++	 * 2. Per-task mode (set at exec based on binary allowlist)
++	 *
++	 * This protects against kernel write primitives: even if attacker
++	 * flips task->xsc_syscall_mode, global flag check still denies.
++	 *
++	 * Mode values:
++	 *   XSC_MODE_XSC (0): must use XSC (default, secure)
++	 *   XSC_MODE_LEGACY (1): allowlisted JIT, direct syscalls allowed
++	 */
++	/* First: check if allowlist is active at all */
++	movb	xsc_allowlist_active(%rip), %al
++	testb	%al, %al
++	jz	.Lxsc_denied		/* Allowlist empty -> hard deny */
++
++	/* Second: check per-task mode */
++	movq	%gs:current_task, %rdi
++	movl	TASK_xsc_syscall_mode(%rdi), %eax
++
++	/* XSC_MODE_XSC (0): default secure mode, DENY direct syscall */
++	testl	%eax, %eax
++	jz	.Lxsc_denied
++
++	/* XSC_MODE_LEGACY (non-zero): allowlisted JIT, ALLOW */
++	/* Continue with normal syscall path */
++#else /* !CONFIG_XSC_LEGACY_ALLOWLIST */
++	/*
++	 * Legacy allowlist disabled: HARD LOCKOUT
++	 *
++	 * All processes MUST use XSC. No exceptions.
++	 * Direct syscalls are denied with zero overhead.
++	 */
++	jmp	.Lxsc_denied
++#endif /* CONFIG_XSC_LEGACY_ALLOWLIST */
++#endif /* CONFIG_XSC */
++
+ 	/* IRQs are off. */
+ 	movq	%rax, %rdi
+ 	movq	%rsp, %rsi
+@@ -120,6 +148,49 @@ SYM_CODE_START(entry_SYSCALL_64)
+ 	jmp	swapgs_restore_regs_and_return_to_usermode
+ SYM_CODE_END(entry_SYSCALL_64)
+
++#ifdef CONFIG_XSC
++/*
++ * XSC Denial Path
++ *
++ * Non-allowlisted process attempted direct syscall.
++ * This is the default secure path for all non-JIT processes.
++ * Log the violation and return error.
++ */
++.Lxsc_denied:
++	/* Save syscall number for violation logging */
++	movq	%rax, %rsi
++
++	/* Call xsc_mode_violation(current, syscall_nr) */
++	movq	%gs:current_task, %rdi
++	call	xsc_mode_violation
++
++	/* Return -ENOSYS (function not implemented) */
++	movq	$-ENOSYS, %rax
++
++/*
++ * Return to userspace after XSC denial
++ */
++.Lxsc_return:
++	/* Restore registers and return */
++	POP_REGS
++	CLEAR_REGS_NOSPEC
++	swapgs
++	sysretq
++
++#endif /* CONFIG_XSC */
++
+ /*
+  * %rdi: prev task
+  * %rsi: next task

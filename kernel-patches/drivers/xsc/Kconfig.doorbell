@@ -1,0 +1,31 @@
+config XSC_DOORBELL
+	bool "XSC ARM64 Doorbell Runtime Validation"
+	depends on ARM64
+	default y
+	help
+	  Enables runtime validation and monitoring of ARM64 doorbell
+	  mechanisms for XSC. Never trusts hardware doorbells without
+	  comprehensive validation.
+
+	  This implements a progressive trust model:
+	    candidate -> preflight -> validate -> steady_state (or rollback)
+
+	  Validation includes:
+	    - MMIO sanity checks
+	    - IRQ delivery verification
+	    - Memory ordering validation
+	    - Latency threshold checks
+	    - Power state transition tests
+	    - Coalescing detection
+	    - Runtime watchdog monitoring
+
+	  If validation fails, the system automatically falls back to
+	  adaptive polling with no loss of functionality.
+
+	  Exposes statistics and control via:
+	    /sys/kernel/xsc/doorbell/
+
+	  Say Y if you want XSC to use hardware doorbells on ARM64
+	  platforms. Say N to always use polling.
+
+	  If unsure, say Y.
