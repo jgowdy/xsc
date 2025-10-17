@@ -119,6 +119,13 @@ This means we must rebuild the entire distribution from source.
 - All operations must work in userspace
 - Cannot modify system directories or install packages globally
 
+**⚠️ ALWAYS use resource limits (80-core server)**
+- Use `nice -n 19` (lowest CPU priority)
+- Use `ionice -c 3` (idle I/O priority)
+- Use `-j30` for parallel builds (not -j80, leave headroom)
+- Monitor load; pause if > 60
+- Sequential package builds with pauses between
+
 ### DO NOT
 
 ❌ Stop the build once started (it's days of work)
