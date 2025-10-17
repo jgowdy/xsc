@@ -8,6 +8,7 @@
 #define _UAPI_LINUX_XSC_H
 
 #include <linux/types.h>
+#include <linux/fs.h>
 
 /*
  * XSC Ring Operation Types
@@ -110,19 +111,6 @@ struct xsc_cqe {
 /*
  * XSC Device Setup Structures
  */
-struct xsc_params {
-	__u32	sq_entries;
-	__u32	cq_entries;
-	__u32	flags;
-	__u32	sq_thread_cpu;
-	__u32	sq_thread_idle;
-	__u32	features;
-	__u32	wq_fd;
-	__u32	resv[3];
-	struct xsc_sqe_ring sq_off;
-	struct xsc_cqe_ring cq_off;
-};
-
 struct xsc_sqe_ring {
 	__u32	head;
 	__u32	tail;
@@ -143,6 +131,19 @@ struct xsc_cqe_ring {
 	__u32	overflow;
 	__u32	cqes;
 	__u64	resv[2];
+};
+
+struct xsc_params {
+	__u32	sq_entries;
+	__u32	cq_entries;
+	__u32	flags;
+	__u32	sq_thread_cpu;
+	__u32	sq_thread_idle;
+	__u32	features;
+	__u32	wq_fd;
+	__u32	resv[3];
+	struct xsc_sqe_ring sq_off;
+	struct xsc_cqe_ring cq_off;
 };
 
 /*

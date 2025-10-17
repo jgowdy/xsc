@@ -91,7 +91,8 @@ rm -rf build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 mkdir build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 cd build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
 
-../src/gcc-13.2.0/configure \
+# Use minimal CFLAGS for bootstrap to avoid dependencies on glibc headers
+CFLAGS="-O2" CXXFLAGS="-O2" ../src/gcc-13.2.0/configure \
     --prefix=$PREFIX \
     --target=$TARGET \
     --enable-languages=c,c++ \
@@ -107,8 +108,8 @@ cd build-gcc-bootstrap-ARCH_PLACEHOLDER-VARIANT_PLACEHOLDER
     --disable-libquadmath \
     --disable-libgcov
 
-make $MAKEFLAGS all-gcc
-make install-gcc
+CFLAGS="-O2" CXXFLAGS="-O2" make $MAKEFLAGS all-gcc all-target-libgcc
+make install-gcc install-target-libgcc
 
 # Stage 4: Glibc (with XSC sysdeps - minimal for now)
 echo ""

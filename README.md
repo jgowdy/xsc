@@ -93,6 +93,8 @@ REPO
 - 80+ core build server recommended
 - 500GB free disk space
 - Debian or AlmaLinux host
+- **Important**: Build runs in userspace (no root/sudo required)
+- **Important**: All scripts use dedicated build directory temp space (not `/tmp`)
 
 ### Build Complete OS
 

@@ -9,25 +9,18 @@
 
 This is a **multi-day operation** using 80 cores on bx.ee.
 
-### Status: IN PROGRESS ⚙️
+### Status: CROSS-COMPILATION PHASE COMPLETE ✅
 
 **Location**: `bx.ee:/storage/icloud-backup/build/`
 
-**Current Stage**: Generating package stage lists (prerequisite for master builder)
+**Current Stage**: Building critical packages with specialized scripts
 
-**Script Running**:
-```bash
-ssh bx.ee "cd /storage/icloud-backup/build && ./scripts/generate-stage-lists.sh"
-```
+**Recent Progress**:
+- ✅ Cross-compilation master builder completed (13 minutes, 97 packages built)
+- ✅ ncurses built with specialized script (--without-ada flag)
+- ⚠️ perl in progress (requires multiple library stubs for deprecated libs)
 
-**Next Step**: Once stage lists complete, start master builder:
-```bash
-ssh bx.ee "cd /storage/icloud-backup/build && nohup ./xsc-master-builder.sh all > xsc-master-builder.log 2>&1 &"
-```
-
-**Expected Duration**: 48-72 hours on 80 cores
-
-**Output**: `/storage/icloud-backup/build/xsc-debian-full/results/` will contain ~2,600 .deb packages
+**Output**: `/storage/icloud-backup/build/xsc-debian-full/results/stage*/` contains 98+ successfully built packages
 
 ### Build Progress Tracking
 
@@ -114,6 +107,18 @@ This means we must rebuild the entire distribution from source.
 **Disk**: 882GB free in `/storage/icloud-backup/build/`
 **Toolchain**: `/storage/icloud-backup/build/xsc-toolchain-x86_64-base/bin/`
 
+### CRITICAL Build Constraints
+
+**⚠️ NEVER use `/tmp` on build server**
+- `/tmp` is a 126GB tmpfs (RAM-backed) that is ALWAYS full
+- All scripts MUST use `/storage/icloud-backup/build/tmp/` or `BUILD_DIR/tmp/`
+- Any script using `mktemp` or writing to `/tmp` will FAIL
+
+**⚠️ NEVER require root or sudo**
+- Build runs as user `jgowdy` with no root access
+- All operations must work in userspace
+- Cannot modify system directories or install packages globally
+
 ### DO NOT
 
 ❌ Stop the build once started (it's days of work)
@@ -129,6 +134,12 @@ This means we must rebuild the entire distribution from source.
 ✅ Keep this file updated as mission progresses
 
 ## Recent Major Changes
+
+**2025-10-17**:
+- Cross-compilation master builder completed: 97/1809 packages built (5.3% success rate for generic configure/make)
+- Built ncurses successfully (needed by 100+ packages)
+- Identified failure patterns: 1100 packages have no upstream tarballs (Debian-native), 1300+ need specialized build procedures
+- Server remained stable throughout build (no I/O saturation with cross-compilation approach)
 
 **2025-10-14**:
 - Removed XSC allowlist concept (JITs can be recompiled for XSC easily)
@@ -171,8 +182,20 @@ If build failed/stopped:
 ssh bx.ee "cd /storage/icloud-backup/build && nohup ./xsc-master-builder.sh retry > retry.log 2>&1 &"
 ```
 
+## Current Approach
+
+**Cross-Compilation Strategy**:
+1. ✅ **Phase 1 Complete**: Generic configure/make cross-compilation (97 packages)
+2. ⚙️ **Phase 2 In Progress**: Specialized build scripts for critical packages
+   - ✅ ncurses (terminal library)
+   - ⚠️ perl (scripting language - complex dependencies)
+   - ⏳ openssl, zlib, dpkg (pending)
+3. ⏳ **Phase 3 Planned**: Retry failed packages with specialized handling
+
+**Key Insight**: Cross-compilation is ~10× faster than QEMU and doesn't cause I/O saturation
+
 ---
 
-**Last Updated**: 2025-10-14 17:00 UTC
-**Status**: Full package build in progress
-**ETA**: 48-72 hours from start
+**Last Updated**: 2025-10-17 09:30 UTC
+**Status**: Building critical packages with specialized scripts
+**Progress**: 98+ packages successfully built for XSC

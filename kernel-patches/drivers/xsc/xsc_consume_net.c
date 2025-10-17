@@ -7,13 +7,10 @@
 #include <linux/socket.h>
 #include <linux/file.h>
 #include <net/sock.h>
-#include "xsc_uapi.h"
+#include "xsc_internal.h"
 
 int xsc_dispatch_net(struct xsc_ctx *ctx, struct xsc_sqe *sqe, struct xsc_cqe *cqe)
 {
-	struct socket *sock;
-	int ret;
-
 	switch (sqe->opcode) {
 	case XSC_OP_SOCKET:
 		return __sys_socket(sqe->fd, sqe->len, sqe->off);

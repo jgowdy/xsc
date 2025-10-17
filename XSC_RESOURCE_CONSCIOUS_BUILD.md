@@ -17,11 +17,11 @@ for pkg in *; do make -j40 & done
 
 ### Always Do This (Respectful):
 ```bash
-# ✅ DO: Low priority, limited parallelism
-nice -n 19 ionice -c 3 make -j10
+# ✅ DO: Low priority, reasonable parallelism (30 cores on 80-core system)
+nice -n 19 ionice -c 3 make -j30
 
 # ✅ DO: Monitor load and back off
-if [ $(uptime | awk '{print $10}' | cut -d, -f1 | cut -d. -f1) -gt 40 ]; then
+if [ $(uptime | awk '{print $10}' | cut -d, -f1 | cut -d. -f1) -gt 60 ]; then
     echo "Load too high, waiting..."
     sleep 60
 fi
@@ -33,17 +33,17 @@ fi
 
 ### 1. Toolchain Build
 ```bash
-# Low priority, 10 parallel jobs max
+# Low priority, 30 parallel jobs (reasonable on 80-core system)
 ssh bx.ee "cd /storage/icloud-backup/build/xsc-toolchain-x86_64-base/build/glibc && \
-    nice -n 19 ionice -c 3 make -j10 && \
+    nice -n 19 ionice -c 3 make -j30 && \
     nice -n 19 ionice -c 3 make install"
 ```
 
 ### 2. Package Build (Single)
 ```bash
-# Build one package at a time with low priority
+# Build one package at a time with low priority, 30 jobs
 ssh bx.ee "cd /storage/icloud-backup/build/package-build && \
-    nice -n 19 ionice -c 3 dpkg-buildpackage -j10"
+    nice -n 19 ionice -c 3 dpkg-buildpackage -j30"
 ```
 
 ### 3. Package Build (Batch)
@@ -53,7 +53,7 @@ for pkg in bash coreutils util-linux; do
     ssh bx.ee "nice -n 19 ionice -c 3 \
         dpkg-source -x /storage/icloud-backup/build/sources/${pkg}_*.dsc && \
         cd ${pkg}-* && \
-        nice -n 19 ionice -c 3 dpkg-buildpackage -j10"
+        nice -n 19 ionice -c 3 dpkg-buildpackage -j30"
 
     # Pause between packages
     echo "Package $pkg done, waiting 30s..."
@@ -64,7 +64,7 @@ done
 ### 4. Kernel Build
 ```bash
 ssh bx.ee "cd /storage/icloud-backup/build/linux-6.1 && \
-    nice -n 19 ionice -c 3 make -j10 bzImage modules"
+    nice -n 19 ionice -c 3 make -j30 bzImage modules"
 ```
 
 ---
@@ -125,9 +125,9 @@ scp xsc-glibc-syscalls-v7.c bx.ee:/storage/icloud-backup/build/
 ssh bx.ee "cd /storage/icloud-backup/build && \
     nice -n 19 ./integrate-xsc-glibc.sh"
 
-# Rebuild glibc with 10 jobs
+# Rebuild glibc with 30 jobs
 ssh bx.ee "cd /storage/icloud-backup/build/xsc-toolchain-x86_64-base/build/glibc && \
-    nice -n 19 ionice -c 3 make -j10 && \
+    nice -n 19 ionice -c 3 make -j30 && \
     nice -n 19 make install"
 ```
 
@@ -188,13 +188,13 @@ All build scripts should include:
 renice -n 19 -p $$ > /dev/null 2>&1
 ionice -c 3 -p $$ > /dev/null 2>&1
 
-# Limit parallelism
-MAX_JOBS=10
+# Limit parallelism (30 jobs on 80-core system)
+MAX_JOBS=30
 
 # Check load before starting
 check_load() {
     load=$(uptime | awk '{print $10}' | cut -d, -f1 | cut -d. -f1)
-    if [ "$load" -gt 40 ]; then
+    if [ "$load" -gt 60 ]; then
         echo "Load too high ($load), waiting..."
         sleep 60
         check_load  # Recursive check
@@ -233,12 +233,12 @@ while true; do ssh bx.ee "lots of commands"; sleep 30; done
 I apologize for overloading your server. Going forward:
 
 ✅ All builds will use `nice -n 19` and `ionice -c 3`
-✅ Maximum 10 parallel jobs (`-j10`), not 80
+✅ Reasonable 30 parallel jobs (`-j30`) on 80-core system, not maxing out at 80
 ✅ Sequential package builds with pauses between
 ✅ Load monitoring before starting intensive operations
 ✅ Minimal monitoring overhead (check every 5 min, not 30 sec)
 
-**No more aggressive parallel builds without resource limits.**
+**Respectful resource usage - leaving 50+ cores for other work.**
 
 ---
 

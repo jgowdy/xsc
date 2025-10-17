@@ -17,14 +17,17 @@
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include <linux/fdtable.h>
 #include <linux/workqueue.h>
 #include <linux/poll.h>
 #include <linux/anon_inodes.h>
 #include <linux/file.h>
+#include <linux/vmalloc.h>
 
-#define CREATE_TRACE_POINTS
-#include "xsc_trace.h"
 #include "xsc_uapi.h"
+#include "../include/xsc_wait.h"
+#include "../include/xsc_mode.h"
 
 #define XSC_DEVICE_NAME	"xsc"
 #define XSC_MAX_ENTRIES	4096
@@ -66,6 +69,8 @@ struct xsc_ctx {
 	spinlock_t		lock;
 	wait_queue_head_t	cq_wait;
 	struct file		*file;
+	struct task_struct	*task;		/* Owner task */
+	struct files_struct	*files;		/* Owner files */
 	bool			polling;
 	int			cpu;
 };
@@ -123,7 +128,7 @@ static void xsc_free_ring_pages(struct page **pages, int npages)
 
 static void *xsc_ring_map_pages(struct page **pages, int npages)
 {
-	return vmap(pages, npages, VM_MAP, PAGE_KERNEL);
+	return vmap(pages, npages, VM_ALLOC, PAGE_KERNEL);
 }
 
 static int xsc_setup_rings(struct xsc_ctx *ctx, struct xsc_params *p)
@@ -333,7 +338,7 @@ static void xsc_complete_cqe(struct xsc_ctx *ctx, u64 user_data, s32 res)
 	smp_wmb();
 	WRITE_ONCE(*ring->cq_tail, tail + 1);
 
-	trace_xsc_complete(ctx, user_data, res);
+	// trace_xsc_complete(ctx, user_data, res);
 
 	spin_unlock(&ctx->lock);
 
@@ -358,7 +363,7 @@ static void xsc_sq_worker(struct work_struct *work)
 
 		sqe = ring->sqes + (head & *ring->sq_mask) * sizeof(struct xsc_sqe);
 
-		trace_xsc_dispatch(ctx, sqe->opcode, smp_processor_id());
+		// trace_xsc_dispatch(ctx, sqe->opcode, smp_processor_id());
 
 		ret = xsc_dispatch_op(ctx, sqe, &cqe);
 
@@ -441,6 +446,7 @@ static __poll_t xsc_poll(struct file *file, poll_table *wait)
 static int xsc_open(struct inode *inode, struct file *file)
 {
 	struct xsc_ctx *ctx;
+	int ret;
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
@@ -449,6 +455,9 @@ static int xsc_open(struct inode *inode, struct file *file)
 	spin_lock_init(&ctx->lock);
 	init_waitqueue_head(&ctx->cq_wait);
 	ctx->file = file;
+	ctx->task = current;
+	ctx->files = current->files;
+	get_task_struct(ctx->task);
 	ctx->cpu = -1;
 
 	file->private_data = ctx;
@@ -462,10 +471,24 @@ static int xsc_release(struct inode *inode, struct file *file)
 
 	if (ctx) {
 		xsc_free_rings(ctx);
+		if (ctx->task)
+			put_task_struct(ctx->task);
 		kfree(ctx);
 	}
 
 	return 0;
+}
+
+static ssize_t xsc_write(struct file *file, const char __user *buf,
+			  size_t count, loff_t *ppos)
+{
+	struct xsc_ctx *ctx = file->private_data;
+
+	/* Writing any data triggers submission queue processing */
+	if (ctx->wq)
+		queue_work(ctx->wq, &ctx->sq_work);
+
+	return count;
 }
 
 static const struct file_operations xsc_fops = {
@@ -475,15 +498,24 @@ static const struct file_operations xsc_fops = {
 	.unlocked_ioctl	= xsc_ioctl,
 	.mmap		= xsc_mmap,
 	.poll		= xsc_poll,
+	.write		= xsc_write,
 };
 
 static int __init xsc_init(void)
 {
 	int ret;
 
+	/* Initialize wait mechanisms first */
+	ret = xsc_wait_init();
+	if (ret) {
+		pr_warn("xsc: wait mechanism init failed (non-fatal): %d\n", ret);
+		/* Continue - wait mechanisms will use safe fallbacks */
+	}
+
 	ret = register_chrdev(0, XSC_DEVICE_NAME, &xsc_fops);
 	if (ret < 0) {
 		pr_err("xsc: failed to register char device\n");
+		xsc_wait_cleanup();
 		return ret;
 	}
 	xsc_major = ret;
@@ -491,6 +523,7 @@ static int __init xsc_init(void)
 	xsc_class = class_create(THIS_MODULE, XSC_DEVICE_NAME);
 	if (IS_ERR(xsc_class)) {
 		unregister_chrdev(xsc_major, XSC_DEVICE_NAME);
+		xsc_wait_cleanup();
 		return PTR_ERR(xsc_class);
 	}
 
@@ -499,6 +532,7 @@ static int __init xsc_init(void)
 	if (IS_ERR(xsc_device)) {
 		class_destroy(xsc_class);
 		unregister_chrdev(xsc_major, XSC_DEVICE_NAME);
+		xsc_wait_cleanup();
 		return PTR_ERR(xsc_device);
 	}
 
@@ -511,6 +545,10 @@ static void __exit xsc_exit(void)
 	device_destroy(xsc_class, MKDEV(xsc_major, 0));
 	class_destroy(xsc_class);
 	unregister_chrdev(xsc_major, XSC_DEVICE_NAME);
+
+	/* Cleanup wait mechanisms */
+	xsc_wait_cleanup();
+
 	pr_info("xsc: unloaded\n");
 }
 
