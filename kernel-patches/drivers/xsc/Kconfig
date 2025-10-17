@@ -1,19 +1,87 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config XSC
-	tristate "eXtended Syscall (XSC) support"
+	bool "eXtended Syscall (XSC) support"
 	depends on X86_64 || ARM64
 	select TRACING
 	help
 	  This option enables support for the eXtended Syscall (XSC) interface,
-	  which provides a ring-based syscall mechanism for improved performance.
+	  which replaces trap-based syscalls with shared-memory submission and
+	  completion rings for improved security and performance.
 
-	  The XSC interface allows userspace applications to submit system call
-	  requests through submission/completion rings instead of traditional
-	  syscall instructions, reducing context switching overhead.
+	  XSC removes user→kernel privilege transitions, eliminating Meltdown
+	  and Spectre-class speculative execution vulnerabilities and their
+	  performance costs (KPTI, IBPB, retpolines, etc.).
 
-	  If you plan to run XSC-enabled applications, say Y or M here.
+	  When enabled, XSC becomes the mandatory syscall path. Applications
+	  submit system call requests through shared rings instead of trap
+	  instructions. The kernel polls these rings using adaptive timing.
 
-	  To compile this driver as a module, choose M here. The module
-	  will be called xsc_core.
+	  XSC provides full Linux API compatibility with identical semantics.
+	  Only the ABI (syscall transport) changes.
+
+	  If you want exception-less, high-security syscall execution, say Y.
 
 	  If unsure, say N.
+
+config XSC_ADAPTIVE_POLL
+	bool "XSC adaptive polling subsystem"
+	depends on XSC
+	default y
+	help
+	  Enable the adaptive polling subsystem which dynamically adjusts
+	  polling intervals based on workload and doorbell reliability.
+
+	  Starts with fast sub-ms polling during doorbell trust convergence,
+	  then backs off to watchdog mode (5-10ms) once reliable. Returns
+	  to fast mode on any anomaly.
+
+	  Supports tickless/deferrable timers for power efficiency.
+
+	  This is the core notification mechanism and should always be enabled.
+
+	  If unsure, say Y.
+
+config XSC_SOFT_DOORBELL
+	bool "Optional null doorbell syscall (not recommended)"
+	depends on XSC
+	default n
+	help
+	  CAUTION: This adds a reserved syscall number that can wake workers
+	  without performing privileged operations. It does NOT submit work
+	  and is ONLY a last-resort wake hint for platforms without hardware
+	  or virtual doorbells.
+
+	  Even when built, it remains DISABLED unless explicitly enabled at
+	  boot with xsc.softdb=on AND per-task opt-in via prctl().
+
+	  This feature is compiled out by default to preserve XSC's purity.
+	  Most deployments should use hardware/virtual doorbells or rely on
+	  adaptive polling.
+
+	  If unsure, say N.
+
+config XSC_TRACE
+	bool "XSC tracing and transparency support"
+	depends on XSC
+	select TRACING
+	default y
+	help
+	  Enable tracepoints for strace, auditd, seccomp, ptrace, and eBPF.
+
+	  Provides xsc_sys_enter/exit tracepoints that mirror traditional
+	  sys_enter/exit behavior. Ensures full observability parity with
+	  standard Linux.
+
+	  If unsure, say Y.
+
+config XSC_SECCOMP
+	bool "Seccomp-on-consume support"
+	depends on XSC && SECCOMP
+	default y
+	help
+	  Execute seccomp filters when workers dequeue submissions.
+
+	  Preserves container seccomp policies with identical semantics.
+	  All ALLOW/KILL/ERRNO/TRAP/USER_NOTIF actions work as expected.
+
+	  If unsure, say Y.
