@@ -1,5 +1,10 @@
 FROM debian:bookworm
 
+# Add deb-src repositories for downloading source packages
+RUN echo "deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb-src http://deb.debian.org/debian-security/ bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+
 # Install comprehensive build dependencies
 # This includes most common build tools needed for Debian packages
 RUN apt-get update && apt-get install -y \
