@@ -5,7 +5,8 @@
    - Boot into the kernel, insmod the module, ensure `/dev/xsc` appears.
 
 2. **Functional I/O**
-   - Run the supplied `test-xsc.c` binaries (hello/read/write/futex).
+   - Build and run `samples/xsc_ring_demo.c` against `/dev/xsc`.
+   - Run the supplied `test-xsc` binaries (hello/read/write/futex).
    - Confirm read/write/pread/pwrite and readv/writev succeed.
    - Socket test: send/recv across AF_INET pair.
 
