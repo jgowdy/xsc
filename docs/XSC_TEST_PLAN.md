@@ -2,7 +2,7 @@
 
 1. **Build/Load**
    - Build the patched kernel (apply `seccomp-xsc.patch`) and XSC module.
-   - Boot into the kernel, insmod the module, ensure `/dev/xsc` appears.
+   - Boot into the kernel (e.g., `test-xsc.sh` on QEMU) and ensure `/dev/xsc` appears.
 
 2. **Functional I/O**
    - Build and run `samples/xsc_ring_demo.c` (use `tools/build-xsc-samples.sh`).
