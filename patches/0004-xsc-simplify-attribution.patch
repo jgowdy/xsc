@@ -1,0 +1,357 @@
+diff --git a/docs/XSC_ATTRIBUTION_STRATEGY.md b/docs/XSC_ATTRIBUTION_STRATEGY.md
+new file mode 100644
+index 0000000..d3c3aa8
+--- /dev/null
++++ b/docs/XSC_ATTRIBUTION_STRATEGY.md
+@@ -0,0 +1,18 @@
++# XSC Attribution Strategy
++
++## Goals
++
++- Charge CPU/IO/memory usage to the submitting task’s cgroup and resource limits while a worker thread executes the SQE.
++- Maintain accurate audit/tracing metadata (UID/GID, PID/TID, cgroup ID).
++- Avoid leaking ownership metadata across submissions.
++
++## Approach
++
++1. Snapshot origin credentials at dequeue (`xsc_task_cred_snapshot`).
++   - Grab ref on the submitting task.
++   - Cache cgroup pointer, rlimits, UID/GID, pid/tgid, and audit context.
++2. Execute via `xsc_run_with_attribution(ctx, ...)`: sets `current->xsc_origin`, swaps in the origin’s audit context, and temporarily reattaches the worker to the origin’s css_set before dispatch. After the handler returns, the previous audit/cgroup/origin state is restored.
++3. Release snapshot once the CQE has been posted.
++
++This keeps attribution state consistent even if multiple SQEs are in flight.
++```
+diff --git a/kernel-patches/drivers/xsc/xsc_attribution.c b/kernel-patches/drivers/xsc/xsc_attribution.c
+new file mode 100644
+index 0000000..e86697b
+--- /dev/null
++++ b/kernel-patches/drivers/xsc/xsc_attribution.c
+@@ -0,0 +1,190 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * XSC Resource Attribution & Accounting (v8-D §2.3)
++ * Copyright (C) 2025
++ *
++ * Charges CPU time, IO, memory, PSI stalls, and rlimit checks to the
++ * origin (submitting task), not the worker thread.
++ */
++
++#include <linux/module.h>
++#include <linux/sched.h>
++#include <linux/sched/signal.h>
++#include <linux/cgroup.h>
++#include <linux/resource.h>
++#include <linux/sched/task.h>
++#include <linux/memcontrol.h>
++#include <linux/blk-cgroup.h>
++#include <linux/audit.h>
++
++#include "xsc_internal.h"
++
++/*
++ * xsc_task_cred_snapshot - Capture origin task credentials
++ * @tc: target credential structure
++ * @origin: submitting task
++ *
++ * Called at SQE dequeue time. Snapshots the submitting task's
++ * credentials, cgroup membership, and rlimits for attribution.
++ */
++void xsc_task_cred_snapshot(struct xsc_task_cred *tc,
++				   struct task_struct *origin)
++{
++	const struct cred *cred;
++
++	memset(tc, 0, sizeof(*tc));
++
++	get_task_struct(origin);
++	tc->origin = origin;
++	tc->pid = task_pid_vnr(origin);
++	tc->tgid = task_tgid_vnr(origin);
++
++	/* Snapshot cgroup v2 membership */
++	rcu_read_lock();
++	tc->origin_css = task_css_set(origin);
++	if (tc->origin_css)
++		css_set_get(tc->origin_css);
++
++#ifdef CONFIG_CGROUPS
++	tc->cgroup_id = cgroup_id(task_cgroup(origin, 0));
++#else
++	tc->cgroup_id = 0;
++#endif
++	rcu_read_unlock();
++
++	/* Snapshot credentials */
++	rcu_read_lock();
++	cred = __task_cred(origin);
++	tc->uid = cred->uid;
++	tc->gid = cred->gid;
++	rcu_read_unlock();
++#ifdef CONFIG_AUDIT
++	tc->audit_ctx = origin->audit_context;
++#endif
++
++	/* Snapshot rlimits */
++	task_lock(origin);
++	memcpy(tc->rlim, origin->signal->rlim, sizeof(tc->rlim));
++	task_unlock(origin);
++}
++EXPORT_SYMBOL_GPL(xsc_task_cred_snapshot);
++
++/*
++ * xsc_task_cred_release - Release credential snapshot
++ * @tc: credential structure to release
++ *
++ * Called after operation completes and CQE is posted.
++ */
++void xsc_task_cred_release(struct xsc_task_cred *tc)
++{
++	if (tc->origin_css) {
++		css_set_put(tc->origin_css);
++		tc->origin_css = NULL;
++	}
++	if (tc->origin) {
++		put_task_struct(tc->origin);
++		tc->origin = NULL;
++	}
++}
++EXPORT_SYMBOL_GPL(xsc_task_cred_release);
++
++/*
++ * xsc_attribution_enter - Begin attributed execution
++ * @tc: credentials for attribution
++ *
++ * Sets up context for charging resources to origin task/cgroup.
++ * Called before executing the actual kernel helper.
++ */
++struct xsc_attr_guard {
++#ifdef CONFIG_CGROUPS
++	bool css_switched;
++#endif
++	struct xsc_ctx *ctx;
++	struct task_struct *prev_origin;
++#ifdef CONFIG_AUDIT
++	struct audit_context *prev_audit;
++#endif
++};
++
++static void xsc_attribution_enter(struct xsc_ctx *ctx,
++				  struct xsc_task_cred *tc,
++				  struct xsc_attr_guard *guard)
++{
++#ifdef CONFIG_CGROUPS
++	guard->css_switched = false;
++#endif
++	guard->ctx = ctx;
++	guard->prev_origin = current->xsc_origin;
++	current->xsc_origin = tc->origin;
++#ifdef CONFIG_AUDIT
++	guard->prev_audit = current->audit_context;
++	current->audit_context = tc->audit_ctx;
++#else
++	guard->prev_audit = NULL;
++#endif
++
++#ifdef CONFIG_CGROUPS
++	if (tc->origin && ctx && ctx->task && tc->origin != current)
++		guard->css_switched = !cgroup_attach_task_all(tc->origin, current);
++#endif
++}
++
++static void xsc_attribution_exit(struct xsc_attr_guard *guard)
++{
++#ifdef CONFIG_AUDIT
++	current->audit_context = guard->prev_audit;
++#endif
++#ifdef CONFIG_CGROUPS
++	if (guard->css_switched && guard->ctx && guard->ctx->task)
++		cgroup_attach_task_all(guard->ctx->task, current);
++#endif
++	current->xsc_origin = guard->prev_origin;
++}
++
++/*
++ * xsc_run_with_attribution - Execute function with origin attribution
++ * @tc: credentials for attribution (must be initialized via snapshot)
++ * @fn: function to execute
++ * @arg: argument to function
++ *
++ * v8-D §2.3 & Appendix B: This is the attribution wrapper that ensures
++ * CPU time, IO, memory, PSI stalls, and rlimit checks are charged to
++ * the origin task/cgroup, not the worker thread.
++ */
++void xsc_run_with_attribution(struct xsc_ctx *ctx,
++		       struct xsc_task_cred *tc,
++		       void (*fn)(void *), void *arg)
++{
++struct xsc_attr_guard guard;
++
++	xsc_attribution_enter(ctx, tc, &guard);
++
++	/* Execute the actual operation (e.g., vfs_read, sendmsg, etc.) */
++	fn(arg);
++
++	xsc_attribution_exit(&guard);
++}
++EXPORT_SYMBOL_GPL(xsc_run_with_attribution);
++
++/*
++ * xsc_check_rlimit - Check rlimit against snapshot
++ * @tc: credentials with rlimit snapshot
++ * @resource: RLIMIT_* constant
++ * @value: value to check
++ *
++ * Returns: 0 if within limit, -EPERM if exceeded
++ *
++ * Used for RLIMIT_FSIZE, RLIMIT_MEMLOCK, RLIMIT_NOFILE, etc.
++ */
++int xsc_check_rlimit(struct xsc_task_cred *tc, unsigned int resource,
++		     unsigned long value)
++{
++	if (resource >= RLIM_NLIMITS)
++		return -EINVAL;
++
++	if (value > tc->rlim[resource].rlim_cur)
++		return -EPERM;
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(xsc_check_rlimit);
+diff --git a/kernel-patches/drivers/xsc/xsc_internal.h b/kernel-patches/drivers/xsc/xsc_internal.h
+index 6c09652..3715121 100644
+--- a/kernel-patches/drivers/xsc/xsc_internal.h
++++ b/kernel-patches/drivers/xsc/xsc_internal.h
+@@ -1,6 +1,7 @@
+ /* SPDX-License-Identifier: GPL-2.0 */
+ /*
+  * XSC internal definitions - shared between module components
++ * v8-D: Adds resource attribution, uvec, observability parity
+  */
+ 
+ #ifndef XSC_INTERNAL_H
+@@ -9,8 +10,59 @@
+ #include <linux/workqueue.h>
+ #include <linux/wait.h>
+ #include <linux/spinlock.h>
++#include <linux/cgroup.h>
++#include <linux/resource.h>
++#include <linux/sched/signal.h>
++#ifdef CONFIG_AUDIT
++#include <linux/audit.h>
++#endif
++#include <linux/uio.h>
+ #include "xsc_uapi.h"
+ 
++/* v8-D §2.3: Resource Attribution & Accounting */
++struct xsc_task_cred {
++	struct task_struct	*origin;	/* submitter at dequeue time */
++	struct css_set		*origin_css;	/* cgroup v2 membership snapshot */
++	struct rlimit		rlim[RLIM_NLIMITS]; /* rlimit snapshot */
++	kuid_t			uid;
++	kgid_t			gid;
++	pid_t			pid;
++	pid_t			tgid;
++	u64			cgroup_id;
++#ifdef CONFIG_AUDIT
++	struct audit_context	*audit_ctx;
++#endif
++};
++
++/* v8-D §2.4: User-Pointer Lifetime Model */
++#define XSC_UVEC_COPY		0	/* COPY-BOUNCE (default) */
++#define XSC_UVEC_PIN		1	/* PINNED (restricted) */
++
++struct xsc_uvec {
++	__u64			addr;
++	__u32			len;
++	__u32			flags;	/* XSC_UVEC_COPY | XSC_UVEC_PIN */
++	struct page		**pages;	/* for PIN mode */
++	int			nr_pages;	/* for PIN mode */
++};
++
++/* v8-D §5.2: Stable Tracepoint Field Definitions */
++struct xsc_tp_enter {
++	__u32			pid;
++	__u32			tgid;
++	__u64			cgroup_id;
++	__u64			nr;		/* semantic syscall nr */
++	__u64			args[6];	/* canonicalized arguments */
++	__u64			ts_nsec;	/* monotonic */
++};
++
++struct xsc_tp_exit {
++	__u32			pid;
++	__u32			tgid;
++	__s64			ret;		/* return or -errno */
++	__u64			ts_nsec;
++};
++
+ struct xsc_ring {
+ 	void			*sq_ring;
+ 	void			*cq_ring;
+@@ -61,4 +113,64 @@ int xsc_dispatch_timer(struct xsc_ctx *ctx, struct xsc_sqe *sqe, struct xsc_cqe
+ int xsc_dispatch_sync(struct xsc_ctx *ctx, struct xsc_sqe *sqe, struct xsc_cqe *cqe);
+ int xsc_dispatch_exec(struct xsc_ctx *ctx, struct xsc_sqe *sqe, struct xsc_cqe *cqe);
+ 
++/* v8-D §2.3: Resource Attribution Wrapper */
++void xsc_run_with_attribution(struct xsc_ctx *ctx,
++		       struct xsc_task_cred *tc,
++		       void (*fn)(void *), void *arg);
++
++/* v8-D §2.5: CQE Write with Batched STAC/CLAC */
++int xsc_cqe_write(struct xsc_ctx *ctx, struct xsc_cqe *cqe, u32 cq_idx);
++
++/* v8-D §2.4: User-memory helpers */
++int xsc_uvec_setup(struct xsc_uvec *uv, u64 addr, u32 len, u32 flags);
++void xsc_uvec_cleanup(struct xsc_uvec *uv);
++
++/* v8-D §5: Observability - Tracepoints & Audit */
++void xsc_trace_sys_enter(struct xsc_tp_enter *tpe);
++void xsc_trace_sys_exit(struct xsc_tp_exit *tpx);
++void xsc_audit_submit(struct xsc_task_cred *tc, u64 nr, u64 *args);
++void xsc_audit_result(struct xsc_task_cred *tc, s64 ret);
++
++/* v8-D §8.4: Lifecycle - Signals, Cancellation, Exec */
++int xsc_check_signals(struct xsc_ctx *ctx);
++void xsc_exec_barrier(struct xsc_ctx *ctx);
++void xsc_cancel_pending_sqes(struct xsc_ctx *ctx);
++
++/* v8-D §5.3: Seccomp at Consume */
++int xsc_seccomp_check(struct xsc_task_cred *tc, u64 nr, u64 *args);
++
++/* v8-D §10: SMT Isolation */
++int xsc_worker_set_affinity(struct xsc_ctx *ctx, struct task_struct *worker);
++void xsc_worker_clear_affinity(struct task_struct *worker);
++
++/* v8-D §2.4: User-memory copy helpers */
++int xsc_uvec_copy_to_user(struct xsc_uvec *uv, const void *src, size_t len);
++int xsc_uvec_copy_from_user(struct xsc_uvec *uv, void *dest, size_t len);
++int xsc_uvec_copy_to_user_ctx(struct xsc_ctx *ctx, struct xsc_uvec *uv,
++			    const void *src, size_t len);
++int xsc_uvec_copy_from_user_ctx(struct xsc_ctx *ctx, struct xsc_uvec *uv,
++			      void *dest, size_t len);
++
++/* Context-aware user copying helpers */
++ssize_t xsc_copy_from_user_ctx(struct task_struct *origin, void *dst,
++			       const void __user *src, size_t len);
++ssize_t xsc_copy_to_user_ctx(struct task_struct *origin, void __user *dst,
++			     const void *src, size_t len);
++int xsc_iov_to_kvec_ctx(struct task_struct *origin,
++			     const struct iovec __user *u_iov, unsigned int iovcnt,
++			     struct kvec *kv, unsigned int *out_cnt, size_t *out_len);
++void xsc_free_kvec_ctx(struct kvec *kv, unsigned int count);
++int xsc_strndup_user_ctx(struct task_struct *origin,
++			 const char __user *uname, char **kname, size_t max);
++
++/* v8-D §2.3: Resource Attribution helpers */
++void xsc_task_cred_snapshot(struct xsc_task_cred *tc, struct task_struct *origin);
++void xsc_task_cred_release(struct xsc_task_cred *tc);
++int xsc_check_rlimit(struct xsc_task_cred *tc, unsigned int resource,
++		     unsigned long value);
++
++/* v8-D §2.5: CQE batch write */
++int xsc_cqe_write_batch(struct xsc_ctx *ctx, struct xsc_cqe *cqes,
++			u32 *indices, u32 count);
++
+ #endif /* XSC_INTERNAL_H */
