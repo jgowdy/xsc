@@ -26,54 +26,14 @@
 #include <linux/vmalloc.h>
 
 #include "xsc_uapi.h"
+#include "xsc_internal.h"
 #include "../include/xsc_wait.h"
 #include "../include/xsc_mode.h"
 
 #define XSC_DEVICE_NAME	"xsc"
 #define XSC_MAX_ENTRIES	4096
 
-struct xsc_ring {
-	void			*sq_ring;
-	void			*cq_ring;
-	void			*sqes;
-	void			*cqes;
-
-	u32			sq_entries;
-	u32			cq_entries;
-
-	u32			*sq_head;
-	u32			*sq_tail;
-	u32			*sq_mask;
-	u32			*sq_flags;
-
-	u32			*cq_head;
-	u32			*cq_tail;
-	u32			*cq_mask;
-	u32			*cq_overflow;
-
-	struct page		**sq_pages;
-	struct page		**cq_pages;
-	struct page		**sqe_pages;
-	struct page		**cqe_pages;
-
-	int			sq_npages;
-	int			cq_npages;
-	int			sqe_npages;
-	int			cqe_npages;
-};
-
-struct xsc_ctx {
-	struct xsc_ring		ring;
-	struct work_struct	sq_work;
-	struct workqueue_struct	*wq;
-	spinlock_t		lock;
-	wait_queue_head_t	cq_wait;
-	struct file		*file;
-	struct task_struct	*task;		/* Owner task */
-	struct files_struct	*files;		/* Owner files */
-	bool			polling;
-	int			cpu;
-};
+/* struct xsc_ring and struct xsc_ctx are defined in xsc_internal.h */
 
 /* Forward declarations */
 static void xsc_sq_worker(struct work_struct *work);
@@ -345,14 +305,37 @@ static void xsc_complete_cqe(struct xsc_ctx *ctx, u64 user_data, s32 res)
 	wake_up_interruptible(&ctx->cq_wait);
 }
 
+struct xsc_dispatch_closure {
+	struct xsc_ctx *ctx;
+	struct xsc_sqe *sqe;
+	struct xsc_cqe *cqe;
+	int ret;
+};
+
+static void xsc_dispatch_with_ctx(void *data)
+{
+	struct xsc_dispatch_closure *closure = data;
+	closure->ret = xsc_dispatch_op(closure->ctx, closure->sqe,
+					      closure->cqe);
+}
+
 static void xsc_sq_worker(struct work_struct *work)
 {
 	struct xsc_ctx *ctx = container_of(work, struct xsc_ctx, sq_work);
 	struct xsc_ring *ring = &ctx->ring;
 	struct xsc_sqe *sqe;
 	struct xsc_cqe cqe;
-	u32 head, tail;
+	struct xsc_task_cred tc;
+	struct xsc_tp_enter tpe;
+	struct xsc_tp_exit tpx;
+	u32 head, tail, cq_idx;
 	int ret;
+
+	/*
+	 * v8-D §10: Set SMT affinity to avoid running on same sibling
+	 * as USER thread. Reduces microarchitectural side-channels.
+	 */
+	xsc_worker_set_affinity(ctx, current);
 
 	while (1) {
 		head = READ_ONCE(*ring->sq_head);
@@ -363,16 +346,121 @@ static void xsc_sq_worker(struct work_struct *work)
 
 		sqe = ring->sqes + (head & *ring->sq_mask) * sizeof(struct xsc_sqe);
 
-		// trace_xsc_dispatch(ctx, sqe->opcode, smp_processor_id());
+		/*
+		 * v8-D §2.3: Snapshot origin task credentials at SQE dequeue.
+		 * This captures PID, UID, GID, cgroup, and rlimits for attribution.
+		 */
+		xsc_task_cred_snapshot(&tc, ctx->task);
 
-		ret = xsc_dispatch_op(ctx, sqe, &cqe);
+		/*
+		 * v8-D §5.3: Seccomp check at consume (before execution).
+		 * Semantic syscall number and canonicalized args.
+		 */
+		ret = xsc_seccomp_check(&tc, sqe->opcode, (u64 *)&sqe->arg1);
+		if (ret) {
+			/* Seccomp blocked operation */
+			cqe.user_data = sqe->user_data;
+			cqe.res = ret;
+			cqe.flags = 0;
+			goto complete;
+		}
 
-		xsc_complete_cqe(ctx, sqe->user_data, ret);
+		/*
+		 * v8-D §5.2: Emit sys_enter tracepoint for observability.
+		 * Compatible with strace, BPF, perf.
+		 */
+		tpe.pid = tc.pid;
+		tpe.tgid = tc.tgid;
+		tpe.cgroup_id = tc.cgroup_id;
+		tpe.nr = sqe->opcode;  /* Semantic syscall number */
+		tpe.args[0] = sqe->arg1;
+		tpe.args[1] = sqe->arg2;
+		tpe.args[2] = sqe->arg3;
+		tpe.args[3] = sqe->arg4;
+		tpe.args[4] = sqe->arg5;
+		tpe.args[5] = sqe->arg6;
+		tpe.ts_nsec = ktime_get_ns();
+		xsc_trace_sys_enter(&tpe);
 
-		/* Update head */
+		/*
+		 * v8-D §5.4: Audit log submission.
+		 */
+		xsc_audit_submit(&tc, sqe->opcode, (u64 *)&sqe->arg1);
+
+		/*
+		 * v8-D §8.4: Check for pending signals before dispatch.
+		 * Return -EINTR if fatal signal pending.
+		 */
+		ret = xsc_check_signals(ctx);
+		if (ret) {
+			cqe.user_data = sqe->user_data;
+			cqe.res = ret;
+			cqe.flags = 0;
+			goto complete;
+		}
+
+		/*
+		 * Dispatch to handler (fs, net, timer, sync, exec).
+		 * Handler runs with origin task attribution via tc.
+		 */
+		struct xsc_dispatch_closure closure = {
+			.ctx = ctx,
+			.sqe = sqe,
+			.cqe = &cqe,
+			.ret = 0,
+		};
+
+		xsc_run_with_attribution(ctx, &tc, xsc_dispatch_with_ctx, &closure);
+		ret = closure.ret;
+
+		/*
+		 * v8-D §5.2: Emit sys_exit tracepoint.
+		 */
+		tpx.pid = tc.pid;
+		tpx.tgid = tc.tgid;
+		tpx.ret = ret;
+		tpx.ts_nsec = ktime_get_ns();
+		xsc_trace_sys_exit(&tpx);
+
+		/*
+		 * v8-D §5.4: Audit log result.
+		 */
+		xsc_audit_result(&tc, ret);
+
+		/* Prepare CQE */
+		cqe.user_data = sqe->user_data;
+		cqe.res = ret;
+		cqe.flags = 0;
+
+complete:
+		/*
+		 * v8-D §2.5: Write CQE with batched SMAP toggles.
+		 * Uses optimized xsc_cqe_write() instead of direct copy.
+		 */
+		cq_idx = READ_ONCE(*ring->cq_tail);
+		xsc_cqe_write(ctx, &cqe, cq_idx);
+
+		/* Update CQ tail */
+		smp_wmb();
+		WRITE_ONCE(*ring->cq_tail, cq_idx + 1);
+
+		/* Wake waiting threads */
+		wake_up_interruptible(&ctx->cq_wait);
+
+		/*
+		 * v8-D §2.3: Release credential snapshot.
+		 */
+		xsc_task_cred_release(&tc);
+
+		/* Update SQ head */
 		smp_mb();
 		WRITE_ONCE(*ring->sq_head, head + 1);
 	}
+
+	/*
+	 * v8-D §10: Clear SMT affinity restrictions after processing.
+	 */
+	xsc_worker_clear_affinity(current);
 }
 
 static long xsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -452,6 +540,12 @@ static int xsc_open(struct inode *inode, struct file *file)
 	if (!ctx)
 		return -ENOMEM;
 
+	ret = xsc_enter_mode(current, ctx);
+	if (ret) {
+		kfree(ctx);
+		return ret;
+	}
+
 	spin_lock_init(&ctx->lock);
 	init_waitqueue_head(&ctx->cq_wait);
 	ctx->file = file;
@@ -470,6 +564,19 @@ static int xsc_release(struct inode *inode, struct file *file)
 	struct xsc_ctx *ctx = file->private_data;
 
 	if (ctx) {
+		xsc_exit_mode(ctx->task, ctx);
+		/*
+		 * v8-D §8.4: Cancel pending SQEs on ring close.
+		 * This handles task exit, exec(), and explicit close().
+		 */
+		xsc_cancel_pending_sqes(ctx);
+
+		/* Flush workqueue to ensure all workers complete */
+		if (ctx->wq) {
+			flush_workqueue(ctx->wq);
+			destroy_workqueue(ctx->wq);
+		}
+
 		xsc_free_rings(ctx);
 		if (ctx->task)
 			put_task_struct(ctx->task);

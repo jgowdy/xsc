@@ -1,0 +1,76 @@
+diff --git a/include/linux/seccomp.h b/include/linux/seccomp.h
+index 1234567..89abcdef 100644
+--- a/include/linux/seccomp.h
++++ b/include/linux/seccomp.h
+@@
+ #ifdef CONFIG_SECCOMP_FILTER
+ extern void seccomp_filter_release(struct task_struct *tsk);
+ extern void get_seccomp_filter(struct task_struct *tsk);
++u32 xsc_seccomp_evaluate(struct task_struct *task,
++                         const struct seccomp_data *sd);
+ #else  /* CONFIG_SECCOMP_FILTER */
+ static inline void seccomp_filter_release(struct task_struct *tsk)
+ {
+ 	return;
+ }
+ static inline void get_seccomp_filter(struct task_struct *tsk)
+ {
+ 	return;
+ }
++static inline u32 xsc_seccomp_evaluate(struct task_struct *task,
++			 const struct seccomp_data *sd)
++{
++	return SECCOMP_RET_ALLOW;
++}
+ #endif /* CONFIG_SECCOMP_FILTER */
+diff --git a/kernel/seccomp.c b/kernel/seccomp.c
+index 1234567..89abcdef 100644
+--- a/kernel/seccomp.c
++++ b/kernel/seccomp.c
+@@
+ static u32 seccomp_run_filters(const struct seccomp_data *sd,
+ 		       struct seccomp_filter **match)
+ {
+ 	u32 ret = SECCOMP_RET_ALLOW;
+ 	/* Make sure cross-thread synced filter points somewhere sane. */
+ 	struct seccomp_filter *f =
+ 		READ_ONCE(current->seccomp.filter);
+@@
+ }
+
++u32 xsc_seccomp_evaluate(struct task_struct *task,
++			 const struct seccomp_data *sd)
++{
++	u32 ret = SECCOMP_RET_ALLOW;
++	struct seccomp_filter *f;
++
++	if (!task)
++		return SECCOMP_RET_ALLOW;
++
++	if (!(READ_ONCE(task->seccomp.mode) & SECCOMP_MODE_FILTER))
++		return SECCOMP_RET_ALLOW;
++
++	rcu_read_lock();
++	f = rcu_dereference(task->seccomp.filter);
++	if (WARN_ON(!f)) {
++		rcu_read_unlock();
++		return SECCOMP_RET_KILL_PROCESS;
++	}
++
++	if (seccomp_cache_check_allow(f, sd)) {
++		rcu_read_unlock();
++		return SECCOMP_RET_ALLOW;
++	}
++
++	for (; f; f = rcu_dereference(f->prev)) {
++		u32 cur_ret = bpf_prog_run_pin_on_cpu(f->prog, sd);
++		if (ACTION_ONLY(cur_ret) < ACTION_ONLY(ret))
++			ret = cur_ret;
++	}
++
++	rcu_read_unlock();
++	return ret;
++}
++EXPORT_SYMBOL_GPL(xsc_seccomp_evaluate);
++
+*** End Patch
